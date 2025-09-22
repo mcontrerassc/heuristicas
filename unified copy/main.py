@@ -50,14 +50,14 @@ if __name__ == "__main__":
         mejor_costo = mejor_costo2
         print(f"Heuristica 2 mejor con costo {mejor_costo2}")
         # --------- Evaluate exclusion of workers ----------
-        P2 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta2, mejor_costo2, r=6)
+        P2 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta2, mejor_costo2)
         print(f"El mejor P logrado es: {P2:.4f} con la Heuristica 2 \n")
     elif ruta2 is None:
         ruta = ruta1
         mejor_costo = mejor_costo1
         print(f"Heuristica 1 mejor con costo {mejor_costo1}")
         # --------- Evaluate exclusion of worker ----------
-        P1 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta1, mejor_costo1, r=6)
+        P1 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta1, mejor_costo1)
         print(f"El mejor P logrado es: {P1:.4f} con la Heuristica 1 \n")
     else:
         if mejor_costo1 < mejor_costo2:
@@ -71,10 +71,10 @@ if __name__ == "__main__":
 
         # --------- Evaluate exclusion of workers ----------
 
-        P1 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta1, mejor_costo1, r=6)
+        P1 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta1, mejor_costo1)
         print(f"Valor máximo P a partir de la Heuristica 1 es: {P1:.4f}")
 
-        P2 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta2, mejor_costo2, r=6)
+        P2 = evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta2, mejor_costo2)
         print(f"Valor máximo P a partir de la Heuristica 2 es: {P2:.4f}")
 
         if P1 > P2:
