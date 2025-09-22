@@ -4,7 +4,7 @@ import re
 import time
 from evaluar import load_graph, load_workers 
 from heuristicaBase import heuristica1, heuristica2, calcular_distancias
-from auxiliar import evaluate_exclusion, evaluate_exclusion_combinations
+from auxiliar import evaluate_exclusion_combinations
 
 if __name__ == "__main__":
     
