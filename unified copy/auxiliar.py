@@ -153,18 +153,15 @@ def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta
             nueva_ruta = []
             for idx in range(len(ruta_modificada)-1):
                 actual = ruta_modificada[idx]
+                nueva_ruta.append(actual) 
                 siguiente_nodo = ruta_modificada[idx+1]
                 if distancias_modificadas[actual, siguiente_nodo] == float("inf"):
-                    if not nueva_ruta:
-                        nueva_ruta = [actual]
                     nueva_ruta = coser_camino(N, adj, actual, siguiente_nodo, nueva_ruta)
                     if nueva_ruta is None:
                         break  # no hay camino posible
                     else: 
                         nueva_ruta = np.array(nueva_ruta, dtype=int).tolist()
                 else:
-                    if not nueva_ruta:
-                        nueva_ruta = [actual]
                     nueva_ruta.append(siguiente_nodo)
 
             # Calcular nuevo costo
@@ -185,12 +182,5 @@ def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta
                 if no_cubiertos > 0:
                     P = (mejor_costo - nuevo_costo) / no_cubiertos
                     maxP = max(maxP, P)
-                    mejor_ruta = nueva_ruta
 
-    print("Ruta encontrada:", mejor_ruta)
-    costo = costear_ruta(mejor_ruta, distancias_modificadas)
-    if costo == float("inf"):
-        print("La ruta no es factible")
-    else:
-        print("La ruta es es factible")
     return maxP
