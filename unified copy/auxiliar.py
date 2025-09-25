@@ -117,8 +117,11 @@ def construir_camino(N, adj, nodes):
 
 # Evaluar exclusión de un trabajador
 
-def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta, mejor_costo, r=5):
+def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta, mejor_costo, r=7):
     maxP = 0
+    maxR = 0
+    maxNoCubiertos = 0
+
 
     for r in range(1, r + 1):
         print(f"Evaluando exclusión de combinaciones de {r} trabajadores...")
@@ -149,6 +152,15 @@ def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta
                 distancias_modificadas[node, :] = float("inf")
                 distancias_modificadas[:, node] = float("inf")
 
+            adj_modificada = adj.copy()
+            for nodo in nodos_bloquados:
+                adj_modificada[nodo] = []
+            
+            for adyacencias in adj_modificada:
+                for j in adyacencias: 
+                    if j[0] in nodos_bloquados:
+                        adyacencias.remove(j)
+
             # Reconstruir la ruta
             nueva_ruta = []
             for idx in range(len(ruta_modificada)-1):
@@ -156,7 +168,7 @@ def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta
                 nueva_ruta.append(actual) 
                 siguiente_nodo = ruta_modificada[idx+1]
                 if distancias_modificadas[actual, siguiente_nodo] == float("inf"):
-                    nueva_ruta = coser_camino(N, adj, actual, siguiente_nodo, nueva_ruta)
+                    nueva_ruta = coser_camino(N, adj_modificada, actual, siguiente_nodo, nueva_ruta)
                     if nueva_ruta is None:
                         break  # no hay camino posible
                     else: 
@@ -181,6 +193,9 @@ def evaluate_exclusion_combinations(N, adj, distancias, workers, cubiertos, ruta
 
                 if no_cubiertos > 0:
                     P = (mejor_costo - nuevo_costo) / no_cubiertos
-                    maxP = max(maxP, P)
+                    if P > maxP:
+                        maxP = P
+                        maxR = r
+                        maxNoCubiertos = no_cubiertos
 
-    return maxP
+    return maxP, maxR, maxNoCubiertos
