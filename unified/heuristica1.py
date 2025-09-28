@@ -1,4 +1,8 @@
 import random 
+import numpy as np
+SEED = 123456
+random.seed(SEED)
+np.random.seed(SEED)
 
 def calcular_puntos_de_pickup(workers, distancias):
     # compute todos los puntos pickup validos para cada trabajador
@@ -13,6 +17,7 @@ def calcular_puntos_de_pickup(workers, distancias):
     return puntos_pickup
 
 def heur_grasp(alpha, N, distancias, puntos_pickup, trabajadores):
+    k = 10
     ruta = []
     trabajadores_sin_recoger = set(range(len(trabajadores)))
     nodo_actual = 0
@@ -51,6 +56,9 @@ def heur_grasp(alpha, N, distancias, puntos_pickup, trabajadores):
         for c in opciones:
             if c[1] >= lower_bound:
                 rcl.append(c)
+                # limitar tamaño máximo de la RCL
+        if k is not None and len(rcl) > k:
+            rcl = rcl[:k]
 
         nodo_escogido, _, trabajadores_recogidos = random.choice(rcl)
         ruta.append(nodo_escogido)
