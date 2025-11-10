@@ -1,12 +1,44 @@
 import gurobipy as gp
 from gurobipy import GRB
+import time
 import sys, time
-from feasibilty_pump import feasibility_pump_seeded, check_feasible_by_fixing_integers
+from feasibilty_pump import feasibility_pump_seeded
+from rins import rins_driver
+from FP import run_bnb_with_fp_rounds
 
-# max total 5min
-TMAX_TOTAL = 300
-# 4 minutos para FP (?)
-T_FP = 240 
+def crearModelo(m, TimeLimit=600): # 300 segundos = 5 minutos
+    params = {
+        # === DESACTIVAR COSAS ===
+        "Heuristics": 0.0,  # 0 desactiva heurísticas internas
+        "Cuts": 0,  # 0 desactiva cortes
+        "Presolve": 0,  # 0 desactiva presolve (2 agresivo, -1 auto)
+        "Symmetry": 0,  # 0 desactiva detección de simetría
+        "ConcurrentMIP": 1,  # 1 desactiva concurrente (corre estrategias distintas en paralelo)
+        # === FOCO DE BÚSQUEDA ===
+        "MIPFocus": 0,  # 0 auto, 1 incumbente rápido, 2 gap, 3 bound
+        "VarBranch": 0,  # 0 auto, 1 max infeas, 2 pseudo cost; como se elige la variable actual para hacer branching
+        "NodeMethod": 1,  # 1 dual simplex en nodos (0 auto, 2 barrier); como se resuelve el LP en los nodos
+        "BranchDir": 0,  # 0 auto, 1 up, -1 down
+        # === TOLERANCIAS ===
+        "MIPGap": 0.0,  # gap objetivo relativo deseado (p.ej. 0.01 = 1%)
+        "FeasibilityTol": 1e-4,  # tolerancia de viabilidad
+        "IntFeasTol": 1e-5,  # tolerancia de integralidad
+        "NumericFocus": 0,  # 0-3 (3 = más robusto numéricamente)
+        # === LÍMITES Y LOG ===
+        "TimeLimit": TimeLimit,  # seg. (0 = sin límite) - 300 segundos = 5 minutos
+        "BestObjStop": None,  # para minimización: detiene al llegar a obj <= valor
+        "BestBdStop": None,  # detiene si bound <= valor
+        "Threads": 0,  # 0 = auto
+        "Seed": 42,
+        "LogToConsole": 1,  # 1 muestra log, 0 oculta
+    }
+
+    for k, v in params.items():
+        if v is not None:
+            m.setParam(k, v)
+    return m
+
+TIEMPO_TOTAL = 300  
 
 def write_solution_dict(sol_dict, out_path):
     with open(out_path, "w") as f:
@@ -14,6 +46,8 @@ def write_solution_dict(sol_dict, out_path):
             f.write(f"{name} {float(val)}\n")
 
 def main():
+    t_inicio = time.time()
+
     inst_path = sys.argv[1]
     m = gp.read(inst_path)
     m.Params.OutputFlag = 0
@@ -34,6 +68,8 @@ def main():
         x0 = [var_to_relax[v.VarName].X for v in xvars]
 
     # Fase de construcción -> Feasbility Pump del aux8 
+    tiempo_usado = time.time() - t_inicio
+    T_FP = TIEMPO_TOTAL - tiempo_usado
     sol = feasibility_pump_seeded(
         model=m,
         xvars=xvars,
@@ -55,6 +91,37 @@ def main():
         # por mientras escribir 0s
         write_solution_dict({v.VarName: 0.0 for v in xvars}, out_name)
         print(out_name)
+
+
+    # model = run_bnb_with_fp_rounds(m, xvars) 
+    # m = crearModelo(m)
+
+    # if model.SolCount > 0:
+    #     # Extraer vector de solución factible del modelo FP
+    #     best_sol_vec = [v.X for v in model.getVars()]
+
+    #     if not hasattr(m, "_fp_inject"):
+    #         m._fp_inject = []
+    #     m._fp_inject.append(best_sol_vec)
+
+    #     for v, val in zip(xvars, best_sol_vec):
+    #         v.Start = val
+
+    #     print("Solución factible encontrada e inyectada como MIP start")
+    # else:
+    #     print("No se encontró solución factible con FP")
+
+    # m.update()
+
+    # t_intermedio = time.time()
+    # tiempo_usado = t_intermedio - t_inicio
+    # tiempo_restante = TIEMPO_TOTAL - tiempo_usado
+
+    # print(f"Tiempo restante para RINS: {tiempo_restante}")
+
+    # m.setParam("TimeLimit", tiempo_restante) 
+    # rins_driver(m, xvars, rounds=3, timelimit_sub=10, node_period=200, total_time_limit=tiempo_restante)
+
 
 if __name__ == "__main__":
     main()
