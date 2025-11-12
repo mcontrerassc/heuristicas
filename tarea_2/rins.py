@@ -1,5 +1,6 @@
 import gurobipy as gp
 from gurobipy import GRB
+import time
 
 # ---------------------------- RINS ----------------------------
 
@@ -217,9 +218,16 @@ def rins_driver(
       3) Si encuentra candidatas, las setea como MIP start + _rins_candidate, y lanza un optimize() corto
          para intentar inyectarlas (cbSetSolution).
     """
-    print("rins")
-    if total_time_limit is not None:
-        model.Params.TimeLimit = total_time_limit
+    t_start = time.time()
+
+    def remaining():
+        if total_time_limit is None:
+            return None
+        return max(0.0, total_time_limit - (time.time() - t_start))
+    # Si hay presupuesto global, setear TL inicial (por seguridad)
+    rem = remaining()
+    if rem is not None:
+        model.setParam("TimeLimit", max(1.0, rem))
         
     # Armamos el callback con parámetros de RINS
     cb = make_rins_callback(
@@ -231,6 +239,15 @@ def rins_driver(
     )
 
     for r in range(1, rounds + 1):
+        # Ccorte por tiempo antes de cada ronda 
+        rem = remaining()
+        if rem is not None and rem <= 1.0:
+            if verbose: print("RINS: sin tiempo restante antes de optimize()")
+            break
+
+        # Limita la ronda a lo que queda (para que Gurobi no se pase)
+        if rem is not None:
+            model.setParam("TimeLimit", rem)
         if verbose:
             print(f"\n=== RINS Ronda {r}/{rounds}: optimize() principal ===")
         model.optimize(cb)
@@ -258,6 +275,14 @@ def rins_driver(
             if x_inc is not None:
                 mrel = model.relax()
                 mrel.setParam("OutputFlag", 0)
+                # antes de optimizar la relajación, respeta presupuesto:
+                rem = remaining()
+                if rem is not None and rem <= 1.0:
+                    try: mrel.dispose()
+                    except: pass
+                    break
+                if rem is not None:
+                    mrel.setParam("TimeLimit", min(5.0, rem))
                 mrel.optimize()
                 if mrel.Status == GRB.OPTIMAL:
                     # Map por nombre para construir x_lp alineado a xvars
@@ -282,6 +307,12 @@ def rins_driver(
 
         # Procesamos TODOS los pares encolados (último en entrar, primero en salir)
         while queue:
+            #corte por tiempo dentro de la cola
+            rem = remaining()
+            if rem is not None and rem <= 1.0:
+                if verbose: print("RINS: sin tiempo durante procesamiento de cola")
+                queue.clear()
+                break
             x_inc, x_lp = queue.pop()  # LIFO
             if verbose:
                 print(f"[RINS-Driver] Ejecutando sub-MIP RINS (TL={timelimit_sub}s)...")
@@ -314,6 +345,9 @@ def rins_driver(
 
         # Si hubo candidata(s), hacemos un optimize corto para darle la chance de entrar
         if any_candidate:
+            rem = remaining()
+            if rem is not None and rem <= 1.0:
+                break
             if verbose:
                 print(
                     "[RINS-Driver] optimize() corto para intentar inyectar candidata..."
