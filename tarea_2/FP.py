@@ -3,6 +3,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import time
 import collections
+import numpy as np
 
 # ---------------------------- FP ----------------------------
 
@@ -152,6 +153,7 @@ def feasibility_pump_seeded(
     t0 = time.time()
     # Inicializa semilla aleatoria (para redondeo y perturbaciones)
     random.seed(seed)
+    model.Params.FeasibilityTol = 1e-4
 
     # Tipos de variables (BINARY, INTEGER o CONTINUOUS)
     vtypes = [v.VType for v in xvars]
@@ -376,8 +378,8 @@ def run_bnb_with_fp_rounds(
     presolve_seeds=3,  # Nº de semillas FP en presolve
     presolve_try_round_pert=True,  # Generar semillas perturbadas en presolve
     presolve_time_limit=None,  # Límite de tiempo del FP en presolve (si None usa fp_time_limit),
-    total_time_limit=None,          # <-- NUEVO: presupuesto global (seg)
-    per_round_time_cap=60.0         # <-- NUEVO: tope por ronda (seg
+    total_time_limit=None,          # <-- global (seg)
+    per_round_time_cap=60.0         # <-- tope por ronda (seg)
 ):
     """
     Orquesta B&B intercalando Feasibility Pump (FP):
@@ -386,6 +388,8 @@ def run_bnb_with_fp_rounds(
       recolectado por el callback.
     - Inyecta soluciones enteras (cbSetSolution) y/o como MIP start (v.start).
     """
+    model.Params.FeasibilityTol = 1e-4
+
     t_start = time.time()
 
     def remaining():
@@ -435,6 +439,7 @@ def run_bnb_with_fp_rounds(
 
         # x0: solución de la relajación raíz
         x0 = [v.X for v in x_lp_vars]
+        #x0 = [v.X + np.random.normal(0, 1e-3 * (v.UB - v.LB)) for v in x_lp_vars]
 
         # Inicializa lista de semillas con la solución raíz
         seeds = [x0]
@@ -503,6 +508,7 @@ def run_bnb_with_fp_rounds(
                 if rem is not None:
                     eff_fp = max(1.0, min(eff_fp, rem))
                 # Ejecuta FP con esa semilla
+                #x0 = [v.X + np.random.normal(0, 1e-3) for v in xvars]
                 sol_dict = feasibility_pump_seeded(
                     model,
                     xvars,
@@ -543,7 +549,7 @@ def run_bnb_with_fp_rounds(
         # -------------------- RONDAS DE B&B --------------------
         for r in range(1, rounds + 1):
             rem = remaining()
-            if rem is not None and rem <= 1.0:
+            if rem is None or rem <= 1.0:
                 if driver_verbose: print("⏰ Sin tiempo antes de la ronda", r)
                 break
             if driver_verbose:
@@ -553,8 +559,10 @@ def run_bnb_with_fp_rounds(
             model._fp_pool = []
 
             # Fija el límite de nodos y ejecuta B&B con el callback
+            print(rem)
             model.Params.TimeLimit = per_round_time_cap if rem is None else max(1.0, min(per_round_time_cap, rem))
             model.Params.NodeLimit = nodes_per_round
+            model.Params.FeasibilityTol = 1e-4
             model.optimize(cb)
 
             # Recupera el pool recolectado por el callback
@@ -580,10 +588,14 @@ def run_bnb_with_fp_rounds(
                         f"[Ronda {r}] FP seed {k}/{len(seeds)}  ||frac||={frac_distance(x0):.3f}"
                     )
                 rem = remaining()
-                if rem is not None and rem <= 1.0:
+                if rem is None or rem <= 1.0:
                     break
                 eff_fp = fp_time_limit if rem is None else max(1.0, min(fp_time_limit, rem))
 
+                if k>1: 
+                    x0 = [val + np.random.normal(0, 1e-3) for val in x0]
+                model.Params.FeasibilityTol = 1e-4
+                model.Params.TimeLimit = eff_fp
                 sol_dict = feasibility_pump_seeded(
                     model,
                     xvars,
@@ -616,14 +628,14 @@ def run_bnb_with_fp_rounds(
                 if driver_verbose:
                     print(f"[Ronda {r}] FP no encontró solución factible.")
 
-        # -------------------- RONDA FINAL SIN LÍMITE --------------------
-        if driver_verbose:
-            print("\n=== Ronda final: sin NodeLimit ===")
-        model.Params.NodeLimit = GRB.INFINITY  # remueve límite de nodos
-        rem = remaining()
-        if rem is not None:
-            model.Params.TimeLimit = max(1.0, rem)
-        model.optimize(cb)  # corrida final completa
+        # # -------------------- RONDA FINAL SIN LÍMITE --------------------
+        # if driver_verbose:
+        #     print("\n=== Ronda final: sin NodeLimit ===")
+        # model.Params.NodeLimit = GRB.INFINITY  # remueve límite de nodos
+        # rem = remaining()
+        # if rem is not None:
+        #     model.Params.TimeLimit = max(1.0, rem)
+        # model.optimize(cb)  # corrida final completa
 
     finally:
         # Siempre restaura parámetros del modelo, incluso si hubo excepciones

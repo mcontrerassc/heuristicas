@@ -94,12 +94,16 @@ def main():
     #     write_solution_dict({v.VarName: 0.0 for v in xvars}, out_name)
     #     print(out_name)
 
-    m = crearModelo(m)
+    tiempo = TIEMPO_TOTAL-(time.time()-t_inicio)
+    print(tiempo)
+    m = crearModelo(m, TimeLimit=tiempo)
+    m.Params.FeasibilityTol = 1e-4
 
+    tiempo = TIEMPO_TOTAL-(time.time()-t_inicio)
     # FASE FP
-    model = run_bnb_with_fp_rounds(m, xvars) 
+    model = run_bnb_with_fp_rounds(m, xvars, total_time_limit=tiempo) 
+    model.Params.FeasibilityTol = 1e-4
     
-
     if model.SolCount > 0:
         # Extraer vector de spolución factible del modelo FP
         best_sol_vec = [v.X for v in model.getVars()]
@@ -118,7 +122,8 @@ def main():
     m.update()
 
     tiempo_usado = time.time() - t_inicio
-    restante_para_rins = max(0.0, T_RINS - max(0.0, tiempo_usado - T_FP))
+    #restante_para_rins = max(0.0, T_RINS - max(0.0, tiempo_usado - T_FP))
+    restante_para_rins = TIEMPO_TOTAL - tiempo_usado
     print(f"Tiempo restante para RINS: {restante_para_rins}")
     #m.setParam("TimeLimit", restante_para_rins) 
     rins_driver(m, xvars, rounds=3, timelimit_sub=10, node_period=200, total_time_limit=restante_para_rins)
