@@ -375,7 +375,9 @@ def run_bnb_with_fp_rounds(
     presolve_fp=True,  # Ejecutar FP antes de B&B usando la raíz
     presolve_seeds=3,  # Nº de semillas FP en presolve
     presolve_try_round_pert=True,  # Generar semillas perturbadas en presolve
-    presolve_time_limit=None,  # Límite de tiempo del FP en presolve (si None usa fp_time_limit)
+    presolve_time_limit=None,  # Límite de tiempo del FP en presolve (si None usa fp_time_limit),
+    total_time_limit=None,          # <-- NUEVO: presupuesto global (seg)
+    per_round_time_cap=60.0         # <-- NUEVO: tope por ronda (seg
 ):
     """
     Orquesta B&B intercalando Feasibility Pump (FP):
@@ -384,6 +386,13 @@ def run_bnb_with_fp_rounds(
       recolectado por el callback.
     - Inyecta soluciones enteras (cbSetSolution) y/o como MIP start (v.start).
     """
+    t_start = time.time()
+
+    def remaining():
+        if total_time_limit is None:
+            return None
+        return max(0.0, total_time_limit - (time.time() - t_start))
+
 
     # Construye el callback que:
     #  - guarda relajaciones (en model._fp_pool)
@@ -488,7 +497,11 @@ def run_bnb_with_fp_rounds(
                         f"[Presolve] FP seed {k}/{min(presolve_seeds,len(root_seeds))}  "
                         f"||frac||={frac_distance(x0):.3f}"
                     )
-
+                # limita el tiempo del FP por lo que queda
+                rem = remaining()
+                eff_fp = fp_time_limit if presolve_time_limit is None else presolve_time_limit
+                if rem is not None:
+                    eff_fp = max(1.0, min(eff_fp, rem))
                 # Ejecuta FP con esa semilla
                 sol_dict = feasibility_pump_seeded(
                     model,
@@ -521,7 +534,7 @@ def run_bnb_with_fp_rounds(
                     print(
                         "[Presolve] FP encontró solución factible -> inyectada como MIP start."
                     )
-                    print(f"✅ Solución factible encontrada en ronda {r}. Deteniendo B&B para RINS.")
+                    print(f"✅ Solución factible encontrada. Deteniendo B&B para RINS.")
                 return model
             else:
                 if driver_verbose:
@@ -529,6 +542,10 @@ def run_bnb_with_fp_rounds(
 
         # -------------------- RONDAS DE B&B --------------------
         for r in range(1, rounds + 1):
+            rem = remaining()
+            if rem is not None and rem <= 1.0:
+                if driver_verbose: print("⏰ Sin tiempo antes de la ronda", r)
+                break
             if driver_verbose:
                 print(f"\n=== B&B Ronda {r}/{rounds}: NodeLimit={nodes_per_round} ===")
 
@@ -536,6 +553,7 @@ def run_bnb_with_fp_rounds(
             model._fp_pool = []
 
             # Fija el límite de nodos y ejecuta B&B con el callback
+            model.Params.TimeLimit = per_round_time_cap if rem is None else max(1.0, min(per_round_time_cap, rem))
             model.Params.NodeLimit = nodes_per_round
             model.optimize(cb)
 
@@ -561,6 +579,10 @@ def run_bnb_with_fp_rounds(
                     print(
                         f"[Ronda {r}] FP seed {k}/{len(seeds)}  ||frac||={frac_distance(x0):.3f}"
                     )
+                rem = remaining()
+                if rem is not None and rem <= 1.0:
+                    break
+                eff_fp = fp_time_limit if rem is None else max(1.0, min(fp_time_limit, rem))
 
                 sol_dict = feasibility_pump_seeded(
                     model,
@@ -598,6 +620,9 @@ def run_bnb_with_fp_rounds(
         if driver_verbose:
             print("\n=== Ronda final: sin NodeLimit ===")
         model.Params.NodeLimit = GRB.INFINITY  # remueve límite de nodos
+        rem = remaining()
+        if rem is not None:
+            model.Params.TimeLimit = max(1.0, rem)
         model.optimize(cb)  # corrida final completa
 
     finally:
