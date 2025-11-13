@@ -38,7 +38,7 @@ def crearModelo(m, TimeLimit=300): # 300 segundos = 5 minutos
             m.setParam(k, v)
     return m
 
-TIEMPO_TOTAL = 300  
+TIEMPO_TOTAL = 290  
 T_FP         = 240      
 T_RINS       = TIEMPO_TOTAL - T_FP  
 

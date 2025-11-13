@@ -25,7 +25,7 @@ def clone_as_lp(model, xvars):
     var_map = {v: name_to_lpvar[v.VarName] for v in xvars}
     return lp, var_map
 
-def build_distance_layer(lp, x_lp_vars, name_prefix="fp"):
+def build_distance_layer(lp, x_lp_vars, vtypes, name_prefix="fp"):
     """
     Crea variables d_j >= |x_j - z_j| linealizado:
         d_j - x_j >= -z_j
@@ -49,7 +49,10 @@ def build_distance_layer(lp, x_lp_vars, name_prefix="fp"):
         cons2.append(c2)
     lp.update()
     # Objetivo: min sum d_j  (lo actualizaremos si quieres ponderar con el original)
-    lp.setObjective(gp.quicksum(d_vars), GRB.MINIMIZE)
+    # lp.setObjective(gp.quicksum(d_vars), GRB.MINIMIZE)
+    # lp.update()
+    obj_expr = gp.quicksum(d_vars[j] for j, t in enumerate(vtypes) if t in (GRB.BINARY, GRB.INTEGER))
+    lp.setObjective(obj_expr, GRB.MINIMIZE)
     lp.update()
     return d_vars, cons1, cons2
 
@@ -64,23 +67,73 @@ def update_z_rhs(lp, cons1, cons2, z):
         cons2[j].RHS = float(z[j])
     lp.update()
 
-def round_ints(x_vals, vtypes, eps=1e-6, seed=None):
+def round_ints(x_vals, vtypes, model, eps=1e-6, seed=None):
     """
     Redondeo "cercano" para enteras y binaria; tie-break aleatorio si muy cerca de .5
     Devuelve z (solo para variables enteras/binary; para continuas usamos x_vals
     """
+    perc_free=0.10
+
     if seed is not None:
         random.seed(seed)
-    z = [None] * len(x_vals)
+    n = len(x_vals)
+    z = [None] * n
+
+    # for j, (xj, t) in enumerate(zip(x_vals, vtypes)):
+    #     if t in (GRB.BINARY, GRB.INTEGER):
+    #         r = round(xj)
+    #         # tie-break suave alrededor de .5
+    #         if abs(xj - 0.5) <= 1e-9 and t == GRB.BINARY:
+    #             r = 1 if random.random() < 0.5 else 0
+    #         z[j] = float(r)
+    #     else:
+    #         z[j] = float(xj)
+    
+    frac = np.zeros(n)
     for j, (xj, t) in enumerate(zip(x_vals, vtypes)):
         if t in (GRB.BINARY, GRB.INTEGER):
-            r = round(xj)
-            # tie-break suave alrededor de .5
-            if abs(xj - 0.5) <= 1e-9 and t == GRB.BINARY:
-                r = 1 if random.random() < 0.5 else 0
-            z[j] = float(r)
+            frac[j] = abs(xj - round(xj))
         else:
-            z[j] = float(xj)
+            frac[j] = -1.0 
+
+    fijar = int(sum(t in (GRB.BINARY, GRB.INTEGER) for t in vtypes))
+    libres = max(1, int(perc_free * fijar))
+    restantes = set(np.argsort(-frac)[:libres])
+
+    mm = model.copy()
+    mm.Params.OutputFlag = 0
+    # mm.Params.TimeLimit = 40.0
+
+    xvars = mm.getVars()
+
+    for j, (xj, t) in enumerate(zip(x_vals, vtypes)):
+        if t in (GRB.BINARY, GRB.INTEGER):
+            if j not in restantes:
+                val = round(xj)
+                xvars[j].lb = val
+                xvars[j].ub = val
+        else:
+            xvars[j].lb = xvars[j].lb
+            xvars[j].ub = xvars[j].ub
+
+    for v in xvars:
+        v.vtype = GRB.CONTINUOUS
+    mm.setObjective(0.0)
+    mm.update()
+    mm.optimize()
+
+    if mm.status in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
+        sol = [v.X for v in xvars]
+        for j, (xj, t) in enumerate(zip(x_vals, vtypes)):
+            if t in (GRB.BINARY, GRB.INTEGER):
+                z[j] = float(round(sol[j]))
+            else:
+                z[j] = float(sol[j])
+    else:
+        # fallback: redondeo normal
+        for j, (xj, t) in enumerate(zip(x_vals, vtypes)):
+            z[j] = float(round(xj)) if t in (GRB.BINARY, GRB.INTEGER) else float(xj)
+
     return z
 
 def distance_L1(x_vals, z, mask_int):
@@ -166,11 +219,11 @@ def feasibility_pump_seeded(
     # Obtiene las variables clonadas en el mismo orden
     x_lp_vars = [var_map[v] for v in xvars]
     # Añade una capa de “distancia” (d_j >= |x_j - z_j|) que se actualizará en cada iteración
-    d_vars, cons1, cons2 = build_distance_layer(lp, x_lp_vars, name_prefix="fp")
+    d_vars, cons1, cons2 = build_distance_layer(lp, x_lp_vars, vtypes, name_prefix="fp")
 
     # === 2) Inicialización ===
     # Redondeo inicial: convierte la solución LP (x0) en entera z
-    z = round_ints(x0, vtypes, eps=int_eps, seed=seed)
+    z = round_ints(x0, vtypes, model, eps=int_eps, seed=seed)
     # Calcula la distancia L1 inicial entre x0 y z (solo en componentes enteras)
     best_L1 = distance_L1(x0, z, mask_int)
     if verbose:
@@ -203,7 +256,7 @@ def feasibility_pump_seeded(
         # (b) Extrae la solución relajada x (continuas)
         x_rel = [xj.X for xj in x_lp_vars]
         # (c) Redondea nuevamente x_rel → z_new
-        z_new = round_ints(x_rel, vtypes, eps=int_eps, seed=seed + it)
+        z_new = round_ints(x_rel, vtypes, model, eps=int_eps, seed=seed + it)
         # (d) Calcula nueva distancia ||x - z||_1 sobre enteras
         L1 = distance_L1(x_rel, z_new, mask_int)
         if verbose:
@@ -439,7 +492,6 @@ def run_bnb_with_fp_rounds(
 
         # x0: solución de la relajación raíz
         x0 = [v.X for v in x_lp_vars]
-        #x0 = [v.X + np.random.normal(0, 1e-3 * (v.UB - v.LB)) for v in x_lp_vars]
 
         # Inicializa lista de semillas con la solución raíz
         seeds = [x0]
@@ -508,7 +560,6 @@ def run_bnb_with_fp_rounds(
                 if rem is not None:
                     eff_fp = max(1.0, min(eff_fp, rem))
                 # Ejecuta FP con esa semilla
-                #x0 = [v.X + np.random.normal(0, 1e-3) for v in xvars]
                 sol_dict = feasibility_pump_seeded(
                     model,
                     xvars,
@@ -592,8 +643,6 @@ def run_bnb_with_fp_rounds(
                     break
                 eff_fp = fp_time_limit if rem is None else max(1.0, min(fp_time_limit, rem))
 
-                if k>1: 
-                    x0 = [val + np.random.normal(0, 1e-3) for val in x0]
                 model.Params.FeasibilityTol = 1e-4
                 model.Params.TimeLimit = eff_fp
                 sol_dict = feasibility_pump_seeded(
