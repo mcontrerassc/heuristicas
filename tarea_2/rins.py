@@ -1,6 +1,8 @@
 import gurobipy as gp
 from gurobipy import GRB
 import time
+import random
+random.seed(42)
 
 # ---------------------------- RINS ----------------------------
 
@@ -155,7 +157,12 @@ def run_rins_subproblem(
     if num_libres > max_vars_libres:
         frac_dist = {v: min(v.X, 1 - v.X) for v in sub.getVars() if v not in vars_fijas_rins}
     
-        vars_ordenadas = sorted(frac_dist.items(), key=lambda kv: kv[1])
+        # ORDENAR por fraccionarias!
+        #vars_ordenadas = sorted(frac_dist.items(), key=lambda kv: kv[1])
+
+        # Randomizar cuales se escogen
+        vars_ordenadas = list(frac_dist.items())
+        random.shuffle(vars_ordenadas)
         exceso = num_libres - max_vars_libres
         vars_a_fijar = [v for v, _ in vars_ordenadas[:exceso]]
         
