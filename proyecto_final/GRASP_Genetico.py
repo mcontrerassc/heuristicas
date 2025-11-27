@@ -495,7 +495,7 @@ def genetic_algorithm_crossover(parent1, parent2, graph):
 # ==============================================================================
 
 def redistricting(shapefile_path, num_distritos, num_escaños, 
-                         num_iteraciones_grasp = 20, num_generaciones_ag = 50, 
+                         num_iteraciones_grasp = 20, num_generaciones_ag = 5, cant_poblacion_ag = 50, 
                          grasp_alpha = 0.2):
 
     # GRASP + Algoritmos Genéticos
@@ -553,20 +553,21 @@ def redistricting(shapefile_path, num_distritos, num_escaños,
     print("\n Fase de Mejora (Algoritmo Genético)...")
     
     # Población inicial: las mejores soluciones de GRASP
-    poblacion_ag = [s['plan'] for s in soluciones_grasp[:num_iteraciones_grasp]] # Usar las N mejores
+    poblacion_ag = [s['plan'] for s in soluciones_grasp[:num_iteraciones_grasp]] 
     mejor_plan_global = soluciones_grasp[0]['plan']
     mejor_func_obj = soluciones_grasp[0]['func_obj']
 
     generaciones_sin_mejora = 0
     
     for gen in range(num_generaciones_ag):
-        print(f" Generación {gen+1}/{num_generaciones_ag}")
+        print(f"\n Generación {gen+1}/{num_generaciones_ag} \n")
         func_objs = [evaluar_plan(plan, num_escaños, unidades_gdf, graph)[0] for plan in poblacion_ag]
 
         mejores_indices = np.argsort(func_objs)[::-1]
-        nueva_poblacion = [poblacion_ag[i] for i in mejores_indices[:5]] 
+        nueva_poblacion = [poblacion_ag[i] for i in mejores_indices[:5]] # Usar las N mejores
         
-        while len(nueva_poblacion) < len(poblacion_ag):
+        while len(nueva_poblacion) < cant_poblacion_ag:
+            print("Creando nuevo individuo mediante crossover y mutación...")
             # Selección de dos padres de los mejores
             p1_idx, p2_idx = np.random.choice(mejores_indices[:10], size=2, replace=False)
             parent1 = poblacion_ag[p1_idx]
@@ -608,8 +609,9 @@ RUTA_SHAPEFILE = r"C:\Users\noefa\Desktop\Facultad\Heuristicas\heuristicas\proye
 POPULATION_COL = 'poblacion' 
 D_DISTRICTS = 15 
 S_SEATS = 70
-NUM_ITERACIONES_GRASP = 30
-NUM_GENERACIONES_AG = 10
+NUM_ITERACIONES_GRASP = 30  # número de soluciones GRASP a generar
+NUM_GENERACIONES_AG = 5 # numero de veces que se ejecuta el algoritmo genético completo (toma las 5 mejores de las generadas por grasp y genera 15 nuevas)
+CANT_POBLACION_AG = 15 # Tamaño final de la población en AG
 PACIENCIA = 6 # Número de generaciones sin mejora
 
 best_plan, seats, final_map_score = redistricting(
@@ -617,7 +619,8 @@ best_plan, seats, final_map_score = redistricting(
     num_distritos=D_DISTRICTS, 
     num_escaños=S_SEATS, 
     num_iteraciones_grasp=NUM_ITERACIONES_GRASP, 
-    num_generaciones_ag=NUM_GENERACIONES_AG
+    num_generaciones_ag=NUM_GENERACIONES_AG, 
+    cant_poblacion_ag=CANT_POBLACION_AG
 )
 
 print(f"\nMejor Plan (Índices de Unidades por Distrito): {best_plan}")
